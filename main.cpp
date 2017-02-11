@@ -15,19 +15,12 @@ using namespace std;
 
 float leftAngle;
 float rightAngle;
-bool rightIsFirst = true;
-bool leftIsFirst = true;
 
 #define USE_VIDEO 1
-
-struct MyLine {
-	MyLine(){}
-	MyLine(CvPoint a): p0(a) { }
-	MyLine(double b): x(b) { }
-
-	double x;
-	CvPoint p0;
-};
+string URL_OUT_PUT = "D:\\file\\result\\Contestant.txt";
+char *URL_OUTPUT_VIDEO = "D:\\file\\result\\BK Pro_Video.avi";
+char *URL_INPUT_VIDEO = "D:\\file\\clip5_BKHN.mp4";
+string data_result = "";
 
 struct Lane {
 	Lane(){}
@@ -41,251 +34,81 @@ struct Lane {
 	int countnear;
 };
 
-
-std::vector<Lane> laneLeft;
-std::vector<Lane> laneRight;
-std::vector<double> xLines;
-std::vector<double> yLines;
-enum{
-	LINE_REJECT_DEGREES = 10, // in degrees
-
-	CANNY_MIN_TRESHOLD = 80,	  // edge detector minimum hysteresis threshold
-	CANNY_MAX_TRESHOLD = 60, // edge detector maximum hysteresis threshold
-
-	HOUGH_TRESHOLD = 5,		// line approval vote threshold
-	HOUGH_MIN_LINE_LENGTH = 5,	// remove lines shorter than this treshold
-	HOUGH_MAX_LINE_GAP = 15,   // join lines to one with smaller than this gaps
+struct CvPointResult{
+	CvPointResult(){}
+	CvPointResult(CvPoint left, CvPoint right): leftP(left),rightP(right){ }
+	
+	CvPoint leftP, rightP;
 };
 
+cv::KalmanFilter KFCenter, kalmainFilterLeft, kalmainFilterRight;
+cv::Mat_<float> measurement(2,1); 
 
-void polyfit(cv::Mat &src_x, cv::Mat &src_y, cv::Mat &dst, int order){
-	CV_FUNCNAME("polyfit");
-	__CV_BEGIN__;
-	{
-		CV_ASSERT((src_x.rows>0)&&(src_y.rows>0)&&(src_x.cols==1)&&(src_y.cols==1)
-				&&(dst.cols==1)&&(dst.rows==(order+1))&&(order>=1));
-		Mat X;
-		X = Mat::zeros(src_x.rows, order+1,CV_64FC1);
-		Mat copy;
-		for(int i = 0; i <=order;i++)
-		{
-			copy = src_x.clone();
-			pow(copy,i,copy);
-			Mat M1 = X.col(i);
-			copy.col(0).copyTo(M1);
-		}
-		Mat X_t, X_inv;
-		transpose(X,X_t);
-		Mat temp = X_t*X;
-		Mat temp2;
-		invert (temp,temp2);
-		Mat temp3 = temp2*X_t;
-		Mat W = temp3 * src_y;
-		
-		
+Mat_<float> state(4, 1); // (x, y, Vx, Vy)
+enum{
+	LINE_REJECT_DEGREES = 10, // in degrees
+	CANNY_MIN_TRESHOLD = 60, // edge detector minimum hysteresis threshold
+	CANNY_MAX_TRESHOLD = 80, // edge detector maximum hysteresis threshold
+	HOUGH_TRESHOLD = 15,		// line approval vote threshold
+	HOUGH_MIN_LINE_LENGTH = 45,	// remove lines shorter than this treshold
+	HOUGH_MAX_LINE_GAP = 50,   // join lines to one with smaller than this gaps
+	DISTANCE_MIN_BEFOR = 50,	// ĐỘ lệch cho phép mà tâm đường lệnh so với trước đó
+	MAX_CAR_MOVE = 5,			// Độ dịch chuyển cho phép của tâm đường 5 px;
+	NUMBER_LINE_IN_FRAME = 30,
+};
 
-		
-#ifdef DEBUG
-		cout<<"PRINTING INPUT AND OUTPUT FOR VALIDATION AGAINST MATLAB RESULTS\n";
-		cout<<"SRC_X: "<<src_x<<endl;
-		cout<<"SRC_Y: "<<src_y<<endl;
-		cout<<"X: "<<X<<endl;
-		cout<<"X_T: "<<X_t<<endl;
-		cout<<"W:"<<W<<endl;
-#endif
-		W.copyTo(dst);
-		//dst = W.clone();
-	}
-	__CV_END__;
+double calPointDistance(CvPoint p0, CvPoint p1) {
+	return sqrt(pow(p0.x - p1.x, 2) + pow(p0.y - p1.y, 2));
 }
+KalmanFilter initKalman(float x, float y, KalmanFilter kf)
+{
+    // Instantate Kalman Filter with
+    // 4 dynamic parameters and 2 measurement parameters,
+    // where my measurement is: 2D location of object,
+    // and dynamic is: 2D location and 2D velocity.
+    kf.init(4, 2, 0);
 
-void processLanes(CvSeq* lines, IplImage* temp_frame, int frameIndex) {
-
-	// classify lines to left/right side
-	std::vector<Lane> left, right;
-	std::vector<Lane> tempLane;
-	std::vector<Lane> resultLane;
-	std::string urlpretreatment = "D:\\file\\fram\\excute\\pretreatment\\temp_frame";
-	std::string urlafter = "D:\\file\\fram\\excute\\urlafter\\temp_frame";
-	std::string url = "D:\\file\\fram\\excute\\url\\temp_frame";
-	urlpretreatment.append(std::to_string(frameIndex) + ".png");
-	urlafter.append(std::to_string(frameIndex) + ".png");
-	if(frameIndex == 10){
-		int a  =10;
-	}
-	cvSaveImage(urlpretreatment.c_str(),temp_frame);
-	float *angles;
-
-	// TODO chi lay 7 diem gan nhau
-
-	for(int i = 0; i < lines->total ; i++ )
-    {
-		// Xử lý từng line
-        CvPoint* line = (CvPoint*)cvGetSeqElem(lines,i); // Điểm
-		int dx = line[1].x - line[0].x;
-		int dy = line[1].y - line[0].y;
-		float angle = atan2f(dy, dx) * 180/CV_PI;
-
-		if (fabs(angle) <= LINE_REJECT_DEGREES || (fabs(angle) <= 90 && fabs(angle) >= 83)) { // reject near horizontal lines
-			continue;
-		}
-
-		
-
-		// assume that vanishing point is close to the image horizontal center
-		// calculate line parameters: y = kx + b;
-		dx = (dx == 0) ? 1 : dx; // prevent DIV/0!  
-		float k = dy/(float)dx;
-		float b = line[0].y - k*line[0].x;
+    measurement = Mat_<float>::zeros(2,1);
+    measurement.at<float>(0, 0) = x;
+    measurement.at<float>(0, 0) = y;
 
 
-		// assign lane's side based by its midpoint position 
-		int midx = (line[0].x + line[1].x) / 2;
-		if (midx < temp_frame->width/2+20) {
-			left.push_back(Lane(line[0], line[1], angle, k, b));
-			
+    kf.statePre.setTo(0);
+    kf.statePre.at<float>(0, 0) = x;
+    kf.statePre.at<float>(1, 0) = y;
 
-		} else if (midx > temp_frame->width/2) {
-			right.push_back(Lane(line[0], line[1], angle, k, b));	
-		}
-    }
-	if(left.size() > 0){
-		for(int i = 0; i< left.size() - 1; i++){
-			double a;
-			for(int j = i; j < left.size(); j++){
-				if(left[j].angle > left[i].angle){
-					Lane temp  = left[i];
-					left[i] = left[j];
-					left[j] = temp;
-				}
-			}
-		}
+    kf.statePost.setTo(0);
+    kf.statePost.at<float>(0, 0) = x;
+    kf.statePost.at<float>(1, 0) = y; 
 
-		int index = 0;
-	double rang = 0;
-
-	int index1 = 0;
-	double rang1 = 0;
-	
-
-	//float median = medianAngles(angles, left.size());
-	float median = left[(int) left.size()/2].angle;
-	for	(int i=0; i<left.size(); i++) {
-
-		if((abs(left[i].angle - median)) < 30){
-			if(rang1 < abs((abs(left[i].angle) - median))){
-				tempLane.push_back(left[i]);
-			}	
-		}
-	}
-
-	// Xap xep tu lop toi nho theo do dai
-	for	(int i=0; i<tempLane.size() - 1; i++) {
-		for(int j = i; j < tempLane.size(); j++){
-			if(util::distanceBetweenTwoCVPoint(tempLane[i].p0, tempLane[i].p1) < util::distanceBetweenTwoCVPoint(tempLane[j].p0, tempLane[j].p1)){
-				Lane temp  = tempLane[i];
-				tempLane[i] = tempLane[j];
-				tempLane[j] = temp;
-			}
-		}
-	}
-	
-	int countnear = 0;
-	int indexnearmost = 0;
-	for(int i =0; i< 3; i++){
-		int temp = 0;
-		for(int j =0; j< tempLane.size(); j++){
-			if(util::distancePointToLine(tempLane[i].p0, tempLane[i].p1, tempLane[j].p0) < 30 
-				|| util::distancePointToLine(tempLane[i].p0, tempLane[i].p1, tempLane[j].p1) < 30){
-					temp ++;
-			}
-		}
-		if(countnear < temp)
-		{
-			countnear = temp;
-			indexnearmost = i;
-		}
-	}
-	
-
-
-	
-	//cvLine(temp_frame, tempLane[indexnearmost].p0, tempLane[indexnearmost].p1, CV_RGB(255, 0, 0), 2);
-	// indexnearmost ==> index cua line chuan
-	for(int i = 0; i < tempLane.size(); i++){
-		int j = 0;
-		if(util::distancePointToLine(tempLane[indexnearmost].p0, tempLane[indexnearmost].p1, tempLane[i].p0) < 30 
-				&& util::distancePointToLine(tempLane[indexnearmost].p0, tempLane[indexnearmost].p1, tempLane[i].p1) < 30){
-			//cvLine(temp_frame, tempLane[i].p0, tempLane[i].p1, CV_RGB(255, 0, 0), 2);
-					resultLane.push_back(tempLane[i]);
-
-		}
-
-	}
-	
-	
-	for(int i = 0 ; i < resultLane.size(); i++){
-		xLines.push_back(resultLane[i].p0.x);
-		xLines.push_back(resultLane[i].p1.x);
-		yLines.push_back(resultLane[i].p0.y);
-		yLines.push_back(resultLane[i].p1.y);
-	}
-
-	cv::Mat srcx = Mat::Mat(xLines);
-	cv::Mat srcy = Mat::Mat(yLines);
-	cv::Mat dist = Mat::Mat(2, 1, CV_32FC1);
-
-	polyfit(srcy, srcx, dist, 1);
-
-	float* pData=(float*)dist.data;
-	float value = pData[0];
-	float value2 = pData[1];
-
-	float *pSrcy = (float*)srcy.data;
-	float *pSrcx = (float*)srcx.data;
-
-	float y = pSrcy[0];
-	float y1 = pSrcy[1];
-
-	float xA = pSrcx[0];
-	float xA1 = pSrcx[1];
-
-	float abx = value2* y + value;
-	float abx1 = value2* y1 + value;
-
-	CvPoint P1;
-	P1.x = abx;
-	P1.y = y;
-
-	CvPoint P2;
-	P2.x = abx1;
-	P2.y = y1;
-
-	cvLine(temp_frame, P1, P2, CV_RGB(255, 0, 0), 2);
-	//cvLine(temp_frame, P1, P2, CV_RGB(0, 0, 255), 2);
-	cvSaveImage(urlafter.c_str(),temp_frame);
-	}
-	
-
-	
+    setIdentity(kf.transitionMatrix);
+    setIdentity(kf.measurementMatrix);
+    setIdentity(kf.processNoiseCov, Scalar::all(.005)); //adjust this for faster convergence - but higher noise
+    setIdentity(kf.measurementNoiseCov, Scalar::all(1e-1));
+    setIdentity(kf.errorCovPost, Scalar::all(.1));
+	return kf;
+}
+Point kalmanPredict(KalmanFilter kf) 
+{
+    Mat prediction = kf.predict();
+    Point predictPt(prediction.at<float>(0),prediction.at<float>(1));
+    return predictPt;
+}
+KalmanFilter kalmanCorrect(float x, float y, KalmanFilter kf)
+{
+    measurement(0) = x;
+    measurement(1) = y;
+    Mat estimated = kf.correct(measurement);
+    Point statePt(estimated.at<float>(0),estimated.at<float>(1));
+    return kf;
 }
 double calLineDistance(Lane line) {
 	return sqrt(pow(line.p0.x - line.p1.x, 2) + pow(line.p0.y - line.p1.y, 2));
 }
-void processLanesImage(CvSeq* lines, IplImage* edges, IplImage* temp_frame, int frameIndex) {
-
+CvPointResult processLanes(CvSeq* lines, IplImage* temp_frame, int frameIndex) {
+	CvPointResult cvPointResult;
 	// classify lines to left/right side
 	std::vector<Lane> left, right;
-	std::string urlpretreatment = "D:\\file\\fram\\excute\\pretreatment\\temp_frame";
-	//std::string urlafter = "D:\\file\\fram\\excute\\urlafter\\temp_frame";
-	std::string urlafter = "D:\\file\\fram\\excute\\temp_frame";
-	std::string url = "D:\\file\\fram\\excute\\url\\temp_frame";
-	urlpretreatment.append(std::to_string(frameIndex) + ".png");
-	urlafter.append(std::to_string(frameIndex) + ".png");
-	cvSaveImage(urlpretreatment.c_str(),temp_frame);
-	if(frameIndex == 22){
-		int a = 100;
-	}
 	if(lines->total > 0){
 		for(int i = 0; i < lines->total; i++ )
 		{
@@ -321,6 +144,7 @@ void processLanesImage(CvSeq* lines, IplImage* edges, IplImage* temp_frame, int 
 		int MAX_LINE = 15;
 		double medianAngle;
 		double a, b;
+	
 		if(left.size() > 0){
 			for (int i = 0; i < left.size()-1; i++) 
 			{
@@ -379,10 +203,17 @@ void processLanesImage(CvSeq* lines, IplImage* edges, IplImage* temp_frame, int 
 			CvPoint leftP1; leftP1.x = left_lines[2] + m*left_lines[0]; leftP1.y = left_lines[3] + m*left_lines[1];
 			cvLine(temp_frame, leftP0, leftP1, CV_RGB(0, 0, 255), 2);
 
-			
-		}
+			double a1 = left_lines[0]/ left_lines[1];
+			double b1 = leftP1.x - a1 * leftP1.y;
 
-		
+			double XResult = a1 * temp_frame->height/2 + b1; 
+
+			CvPoint resultL; resultL.x = XResult; resultL.y = temp_frame->height/2;
+
+			//CvPoint leftResult; leftResult.x = (leftP0.x + leftP1.x)/2; leftResult.y = (leftP0.y + leftP1.y)/2;
+
+			cvPointResult.leftP = resultL;
+		}
 
 		if(right.size() > 0){
 			// THỰC HIỆN TƯƠNG TỰ VỚI CÁC ĐOẠN BÊN PHẢI
@@ -444,32 +275,44 @@ void processLanesImage(CvSeq* lines, IplImage* edges, IplImage* temp_frame, int 
 
 			CvPoint rightP0; rightP0.x = right_lines[2] - m*right_lines[0]; rightP0.y = right_lines[3] - m*right_lines[1];
 			CvPoint rightP1; rightP1.x = right_lines[2] + m*right_lines[0]; rightP1.y = right_lines[3] + m*right_lines[1];
+
+			double a1 = right_lines[0]/ right_lines[1];
+			double b1 = rightP1.x - a1 * rightP1.y;
+
+			double XResult = a1 * temp_frame->height/2 + b1; 
+
+			CvPoint resultR; resultR.x = XResult; resultR.y = temp_frame->height/2;
+			//CvPoint rightResult; rightResult.x = (rightP0.x + rightP1.x)/2;rightResult.y = (rightP0.y + rightP1.y)/2;
+			cvPointResult.rightP = resultR;
+
 			cvLine(temp_frame, rightP0, rightP1, CV_RGB(0, 0, 255), 2);
 		}
 		
-		cvSaveImage(urlafter.c_str(),temp_frame);
+		// Chia 1/4 khung hinh
+		CvPoint lineP0, lineP1;
+		lineP0.x = 0; lineP0.y = 0; 
+		lineP1.x =  temp_frame->width;lineP1.y = 0;
+		cvLine(temp_frame, lineP0, lineP1, CV_RGB(255, 0, 255), 2);
+		return cvPointResult;
 	}
 }
+
 
 int main(int argc, char * argv[])
 {
 	
 	//VideoCapture videoCapture("D:\\file\\road.avi");
 #ifdef USE_VIDEO
-	CvCapture *input_video = cvCreateFileCapture("D:\\file\\05.avi");
+	CvCapture *input_video = cvCreateFileCapture(URL_INPUT_VIDEO);
 #else
 	CvCapture *input_video = cvCaptureFromCAM(0);
 #endif
-
 	if (input_video == NULL) {
 		fprintf(stderr, "LOG: Error: Can't open video \n");
 		system("PAUSE");
 		return -1;
 
 	}
-
-	CvFont font;
-	cvInitFont( &font, CV_FONT_VECTOR0, 0.25f, 0.25f);
 
 	CvSize video_size;
 	video_size.height = (int) cvGetCaptureProperty(input_video, CV_CAP_PROP_FRAME_HEIGHT);
@@ -478,46 +321,44 @@ int main(int argc, char * argv[])
 	long current_frame = 0;
 	int key_pressed = 0;
 	IplImage *frame = NULL;
-
+	CvPoint pointLeftPrior, pointRightPrior, pointCenterPrior;		// Lưu các point trước và sau.
 	
 
 	//	Set Fram size
 	//	size yêu cầu: 1/4 khung nhìn
 	CvSize frame_size = cvSize(video_size.width, video_size.height/4);
 
+    double fps = cvGetCaptureProperty(input_video, CV_CAP_PROP_FPS);    
+	CvVideoWriter* outputVideo = NULL;
+    outputVideo = cvCreateVideoWriter(URL_OUTPUT_VIDEO, CV_FOURCC('M','J','P','G'), fps, cvSize((int)video_size.width,(int)video_size.height), 1);
+    if (outputVideo == NULL)
+    {
+        printf("!!! ERROR: cvCreateVideoWriter\n");
+        return -1;
+    }
+
 	//	Create image
+	//IplImage *current_frame = cvCreateImage(cvSize(video_size.width, video_size.height), IPL_DEPTH_8U, 3);
 	IplImage *temp_frame = cvCreateImage(frame_size, IPL_DEPTH_8U, 3);
 	IplImage *grey = cvCreateImage(frame_size, IPL_DEPTH_8U, 1);
 	IplImage *edges = cvCreateImage(frame_size, IPL_DEPTH_8U, 1);
 	IplImage *gauss_grey = cvCreateImage(frame_size, IPL_DEPTH_8U, 1);
+
+	
 	//IplImage *half_frame = cvCreateImage(cvSize(video_size.width/2, video_size.height/2), IPL_DEPTH_8U, 3);
 
 	CvMemStorage* houghStorage = cvCreateMemStorage(0);
-
-	//	Nhận diện đồ vật
-	//CvMemStorage* haarStorage = cvCreateMemStorage(0);
-	//CvHaarClassifierCascade* cascade = (CvHaarClassifierCascade*)cvLoad("haar/cars3.xml");
-
-	//cvSetCaptureProperty(input_video, CV_CAP_PROP_POS_FRAMES, current_frame)
 	int i =0;
-	std::string url = "D:\\file\\fram\\video5\\frame";
-	while(key_pressed != 27) {
+	// load output from fpt
+	//vector<CvPoint> output = util::readOutputClipFPT("D:\\file\\Output\\output_Clip5.txt");
+	 for( ; ; ){
 
 		frame = cvQueryFrame(input_video);
-
-
 		if (frame == NULL) {
 			fprintf(stderr, "Error: null frame received\n");
-			return -1;
+			break;
 		}
 		
-		std::string temp = url;
-		temp.append(std::to_string(i) + ".png");
-		
-		//GaussianBlur(temp, temp, (7, 7), 2);
-
-		cvSaveImage(temp.c_str(),frame);
-		i ++;
 		util::cropImage(frame, temp_frame, cvRect(0,video_size.height-frame_size.height,frame_size.width,frame_size.height));
 
 		// CHUYỂN TỪ ẢNH MÀU THÀNH ẢNH ĐEN TRẮNG
@@ -529,108 +370,122 @@ int main(int argc, char * argv[])
 		// TÌM BIÊN BẰNG PHƯƠNG PHÁP CANNY
 		cvCanny(gauss_grey, edges, CANNY_MIN_TRESHOLD, CANNY_MAX_TRESHOLD);
 
-
-		// do Hough transform to find lanes
 		double rho = 1;
 		double theta = CV_PI/180;
-
-		// TODO using 
-		// HOUGH_MIN_LINE_LENGTH:50  video4 
-		// HOUGH_MIN_LINE_LENGTH: 5 video 5
 
 		CvSeq* lines = cvHoughLines2(edges, houghStorage, CV_HOUGH_PROBABILISTIC, 
 			rho, theta, HOUGH_TRESHOLD, HOUGH_MIN_LINE_LENGTH, HOUGH_MAX_LINE_GAP);
 		
-		if (lines->total < 30) {
+		if (lines->total < NUMBER_LINE_IN_FRAME) {
 			cvSmooth(grey, gauss_grey, CV_GAUSSIAN, 3, 3, 2);
-			cvCanny(gauss_grey, edges, CANNY_MIN_TRESHOLD, CANNY_MAX_TRESHOLD);
+			cvCanny(gauss_grey, edges, CANNY_MIN_TRESHOLD * 0.8, CANNY_MAX_TRESHOLD * 0.8);
 			houghStorage = cvCreateMemStorage(0);
 			lines = cvHoughLines2(edges, houghStorage, CV_HOUGH_PROBABILISTIC,
 				rho, theta, HOUGH_TRESHOLD, HOUGH_MIN_LINE_LENGTH, HOUGH_MAX_LINE_GAP/3);
 		}
 		// XỬ LÝ VỚI ĐOẠN THẲNG
-		processLanesImage(lines, edges, temp_frame,i);
+		CvPointResult cvPointResult = processLanes(lines, temp_frame,i);
+		
+		CvPoint leftResult = cvPointResult.leftP;
+		CvPoint rightResult = cvPointResult.rightP;
+		
+		// XÁC ĐỊNH TÂM ĐƯỜNG
+		CvPoint centerLineResult = CvPoint((leftResult.x + rightResult.x)/2, (leftResult.y + rightResult.y)/2);
 
-		cvLine(temp_frame, cvPoint(frame_size.width/2,0), 
-			cvPoint(frame_size.width/2,frame_size.height), CV_RGB(255, 255, 0), 1);
+		// KALMAIN CHO TÂM ĐƯỜNG
+		if(i == 0){
+			// INIT KALMAN
+			KFCenter = initKalman(centerLineResult.x, centerLineResult.y, KFCenter); KFCenter = kalmanCorrect(centerLineResult.x, centerLineResult.y, KFCenter);
+			kalmainFilterLeft = initKalman(leftResult.x, leftResult.y, kalmainFilterLeft); kalmainFilterLeft = kalmanCorrect(leftResult.x, leftResult.y, kalmainFilterLeft);
+			kalmainFilterRight = initKalman(rightResult.x, rightResult.y, kalmainFilterRight); kalmainFilterRight = kalmanCorrect(rightResult.x, rightResult.y, kalmainFilterRight);
 
+			// SAVE POINT
+			pointLeftPrior = leftResult;
+			pointRightPrior = rightResult;
+			pointCenterPrior = centerLineResult;
+		}else{
+			// NẾU MÀ VỊ TRÍ TRÁI PHẢI LỆCH QUÁ NHIỀU SO VỚI ĐIỂM TRƯỚC ĐÓ ==> QUÁ TRÌNH SỬ LÝ LỖI => LẤY ĐIỂM KALMAIN
+			if(calPointDistance(centerLineResult, pointCenterPrior) > DISTANCE_MIN_BEFOR){
+				CvPoint tempP = kalmanPredict(KFCenter);
+				if(tempP.x > pointCenterPrior.x){
+					// TO RIGHT
+					centerLineResult.x = pointCenterPrior.x + MAX_CAR_MOVE;
+				}else{
+					// TO LEFT
+					centerLineResult.x = pointCenterPrior.x - MAX_CAR_MOVE;
+				}
+
+				centerLineResult.y = tempP.y;
+			}else{
+				 if(centerLineResult.x > pointCenterPrior.x){
+					// TO RIGHT
+					centerLineResult.x = pointCenterPrior.x + MAX_CAR_MOVE;
+				}else{
+					// TO LEFT
+					centerLineResult.x = pointCenterPrior.x - MAX_CAR_MOVE;
+				}
+			}
+
+			// SAVE POINT
+			kalmainFilterLeft = kalmanCorrect(centerLineResult.x, centerLineResult.y, kalmainFilterLeft);
+			kalmainFilterRight = kalmanCorrect(centerLineResult.x, centerLineResult.y, kalmainFilterRight);
+			KFCenter = kalmanCorrect(centerLineResult.x, centerLineResult.y, KFCenter);
+			pointLeftPrior = leftResult;
+			pointRightPrior = rightResult;
+			pointCenterPrior = centerLineResult;
+		}
+		
+					
+		// SAVE TO FILE OUT PUT
+		data_result = std::to_string(i);
+		data_result.append(" ");
+		data_result.append(std::to_string(centerLineResult.x));
+		data_result.append(" ");
+		data_result.append(std::to_string(temp_frame->height * 3 + centerLineResult.y));
+		data_result.append("\n");
+
+		std::string abc = util::readFile(URL_OUT_PUT);
+		if(abc.empty()){
+			// frame dau tien
+			util::writeFile(std::to_string( i + 1).append("\n"), URL_OUT_PUT);
+			util::writeFile(data_result, URL_OUT_PUT);
+		}else{
+			// thay the
+			int index_temp = abc.find_first_of("\n");
+			string temp_out = abc.substr(index_temp, abc.length());
+			string final_out = std::to_string( i + 1).append(temp_out);
+			
+			final_out.append(data_result);
+
+			util::overwriteFile(final_out, URL_OUT_PUT);
+		}
+
+		//circle(cv::cvarrToMat(temp_frame), leftResult, temp_frame->width/64.0, CV_RGB(255, 0, 0));
+		//circle(cv::cvarrToMat(temp_frame), rightResult, temp_frame->width/64.0, CV_RGB(0, 0, 255));
+		circle(cv::cvarrToMat(temp_frame), centerLineResult, temp_frame->width/64.0, CV_RGB(255, 255, 0));
+		//circle(cv::cvarrToMat(temp_frame), output[i], temp_frame->width/64.0, CV_RGB(169, 7, 142));
+		
 		cvShowImage("Grey", grey);
 		cvShowImage("Edges", edges);
-		//cvShowImage("Color", temp_frame);
-		cvSaveImage(temp.c_str(),edges);
 		//	Set location screen
 		cvMoveWindow("Grey", 0, 0); 
 		cvMoveWindow("Edges", 0, 2*(frame_size.height+25));
 		cvMoveWindow("Color", 0, frame_size.height+25); 
-
 		cvShowImage("Color", temp_frame);
-		key_pressed = cvWaitKey(5);
+
+		util::copyImage(temp_frame, frame);
+		cvWriteFrame(outputVideo, frame);
+		waitKey(5);
+		i ++;
 	}
 
+	// free mem
 	cvReleaseMemStorage(&houghStorage);
-
+	cvReleaseVideoWriter(&outputVideo);
 	cvReleaseImage(&grey);
 	cvReleaseImage(&edges);
 	cvReleaseImage(&temp_frame);
 
 	cvReleaseCapture(&input_video);
-	
-
-	// TEST XU LY TUNG ANH
-	/* SIMPLE CODE TO PROCESS THE IMAGE */
-	/*// XỬ LÝ ẢNH VỚI TỪNG FRAME
-	IplImage *frame = cvLoadImage("D:\\file\\fram\\excute\\pretreatment\\temp.png", 1);
-	//CvSize frame_size = cvSize(video_size.width, video_size.height/4);
-	CvSize frame_size = cvSize(frame->width, frame->height);
-	//CvSize frame_size = cvSize(video_size.width, video_size.height/4);
-	IplImage *temp_frame = cvLoadImage("D:\\file\\fram\\excute\\pretreatment\\temp.png", 1);
-	temp_frame = frame;
-
-
-	IplImage *grey = cvCreateImage(frame_size, IPL_DEPTH_8U, 1);
-	IplImage *gauss_grey = cvCreateImage(frame_size, IPL_DEPTH_8U, 1);
-	IplImage *edges = cvCreateImage(frame_size, IPL_DEPTH_8U, 1);
-
-	// CHUYỂN TỪ ẢNH MÀU THÀNH ẢNH ĐEN TRẮNG
-	cvCvtColor(temp_frame, grey, CV_BGR2GRAY);
-	// LỌC TRUNG VỊ ĐỂ KHỬ NHIỄU
-	cvSmooth(grey, grey, CV_MEDIAN, 3, 3);
-	// LỌC GAUSS LÀM TRƠN ẢNH
-	cvSmooth(grey, gauss_grey, CV_GAUSSIAN, 13, 13, 5);
-
-	// TÌM BIÊN BẰNG PHƯƠNG PHÁP CANNY
-	cvCanny(gauss_grey, edges, CANNY_MIN_TRESHOLD, CANNY_MAX_TRESHOLD);
-	CvMemStorage* houghStorage = cvCreateMemStorage(0);
-	double rho = 1;
-	double theta = CV_PI / 180;
-	// TÌM ĐƯỜNG THẲNG BẰNG HOUGH TRANSFORM
-	CvSeq* lines = cvHoughLines2(edges, houghStorage, CV_HOUGH_PROBABILISTIC,
-		rho, theta, HOUGH_TRESHOLD, HOUGH_MIN_LINE_LENGTH, HOUGH_MAX_LINE_GAP);
-	// NẾU SỐ ĐOẠN TÌM ĐƯỢC NHỎ HƠN 30, GIẢM LỌC GAUSS ĐỂ TÌM THÊM ĐOẠN THẲNG
-	if (lines->total < 30) {
-		cvSmooth(grey, gauss_grey, CV_GAUSSIAN, 3, 3, 2);
-		cvCanny(gauss_grey, edges, CANNY_MIN_TRESHOLD, CANNY_MAX_TRESHOLD);
-		houghStorage = cvCreateMemStorage(0);
-		lines = cvHoughLines2(edges, houghStorage, CV_HOUGH_PROBABILISTIC,
-			rho, theta, HOUGH_TRESHOLD, HOUGH_MIN_LINE_LENGTH, HOUGH_MAX_LINE_GAP/3);
-
-		if(lines->total < 15){
-			// TIEP TUC GIAM NHIEU ANH
-			Mat tempMat =cv::cvarrToMat(grey);
-			cv::fastNlMeansDenoising(tempMat, tempMat);
-			grey = cvCloneImage(&(IplImage)tempMat);
-
-
-			cvSmooth(grey, gauss_grey, CV_GAUSSIAN, 3, 3, 2);
-			cvCanny(gauss_grey, edges, CANNY_MIN_TRESHOLD, CANNY_MAX_TRESHOLD);
-			houghStorage = cvCreateMemStorage(0);
-			lines = cvHoughLines2(edges, houghStorage, CV_HOUGH_PROBABILISTIC,
-				rho, theta, HOUGH_TRESHOLD, HOUGH_MIN_LINE_LENGTH, HOUGH_MAX_LINE_GAP/3);
-		}
-	}
-	// XỬ LÝ VỚI ĐOẠN THẲNG
-	processLanesImage(lines, edges, temp_frame, 1000);
-
-	system ("PAUSE");*/
 
 }

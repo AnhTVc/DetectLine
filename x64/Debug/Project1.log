@@ -1,28 +1,33 @@
-﻿Build started 12/25/2016 5:47:44 PM.
+﻿Build started 1/17/2017 2:13:56 PM.
      1>Project "C:\Users\VietAnh\documents\visual studio 2012\Projects\Project1\Project1\Project1.vcxproj" on node 2 (Build target(s)).
      1>InitializeBuildStatus:
          Creating "x64\Debug\Project1.unsuccessfulbuild" because "AlwaysCreate" was specified.
        ClCompile:
          C:\Program Files (x86)\VS\Microsoft Visual Studio 12.0\VC\bin\x86_amd64\CL.exe /c /IC:\lib\new\opencv\build\include /Zi /nologo /W3 /WX- /Od /D _MBCS /Gm /EHsc /RTC1 /MDd /GS /fp:precise /Zc:wchar_t /Zc:forScope /Fo"x64\Debug\\" /Fd"x64\Debug\vc110.pdb" /Gd /TP /errorReport:prompt main.cpp
          main.cpp
-     1>main.cpp(127): warning C4244: 'argument' : conversion from 'int' to 'float', possible loss of data
-     1>main.cpp(127): warning C4244: 'initializing' : conversion from 'double' to 'float', possible loss of data
-     1>main.cpp(257): warning C4244: '=' : conversion from 'float' to 'int', possible loss of data
-     1>main.cpp(258): warning C4244: '=' : conversion from 'float' to 'int', possible loss of data
-     1>main.cpp(261): warning C4244: '=' : conversion from 'float' to 'int', possible loss of data
-     1>main.cpp(262): warning C4244: '=' : conversion from 'float' to 'int', possible loss of data
-     1>main.cpp(117): warning C4101: 'angles' : unreferenced local variable
-     1>main.cpp(154): warning C4101: 'a' : unreferenced local variable
-     1>main.cpp(295): warning C4244: 'argument' : conversion from 'int' to 'float', possible loss of data
-     1>main.cpp(295): warning C4244: 'initializing' : conversion from 'double' to 'float', possible loss of data
-     1>main.cpp(360): warning C4244: 'argument' : conversion from 'int' to 'float', possible loss of data
-     1>main.cpp(373): warning C4267: 'argument' : conversion from 'size_t' to 'int', possible loss of data
-     1>main.cpp(378): warning C4244: '=' : conversion from 'double' to 'int', possible loss of data
-     1>main.cpp(379): warning C4244: '=' : conversion from 'double' to 'int', possible loss of data
-     1>main.cpp(425): warning C4244: 'argument' : conversion from 'int' to 'float', possible loss of data
-     1>main.cpp(439): warning C4267: 'argument' : conversion from 'size_t' to 'int', possible loss of data
-     1>main.cpp(445): warning C4244: '=' : conversion from 'double' to 'int', possible loss of data
-     1>main.cpp(446): warning C4244: '=' : conversion from 'double' to 'int', possible loss of data
+     1>main.cpp(94): warning C4244: 'argument' : conversion from 'float' to 'int', possible loss of data
+     1>main.cpp(102): warning C4244: 'argument' : conversion from 'float' to 'int', possible loss of data
+     1>main.cpp(118): warning C4244: 'argument' : conversion from 'int' to 'float', possible loss of data
+     1>main.cpp(118): warning C4244: 'initializing' : conversion from 'double' to 'float', possible loss of data
+     1>main.cpp(184): warning C4244: 'argument' : conversion from 'int' to 'float', possible loss of data
+     1>main.cpp(197): warning C4267: 'argument' : conversion from 'size_t' to 'int', possible loss of data
+     1>main.cpp(202): warning C4244: '=' : conversion from 'double' to 'int', possible loss of data
+     1>main.cpp(203): warning C4244: '=' : conversion from 'double' to 'int', possible loss of data
+     1>main.cpp(211): warning C4244: '=' : conversion from 'double' to 'int', possible loss of data
+     1>main.cpp(256): warning C4244: 'argument' : conversion from 'int' to 'float', possible loss of data
+     1>main.cpp(270): warning C4267: 'argument' : conversion from 'size_t' to 'int', possible loss of data
+     1>main.cpp(276): warning C4244: '=' : conversion from 'double' to 'int', possible loss of data
+     1>main.cpp(277): warning C4244: '=' : conversion from 'double' to 'int', possible loss of data
+     1>main.cpp(284): warning C4244: '=' : conversion from 'double' to 'int', possible loss of data
+     1>main.cpp(398): warning C4244: 'argument' : conversion from 'int' to 'float', possible loss of data
+     1>main.cpp(399): warning C4244: 'argument' : conversion from 'int' to 'float', possible loss of data
+     1>main.cpp(400): warning C4244: 'argument' : conversion from 'int' to 'float', possible loss of data
+     1>main.cpp(430): warning C4244: 'argument' : conversion from 'int' to 'float', possible loss of data
+     1>main.cpp(431): warning C4244: 'argument' : conversion from 'int' to 'float', possible loss of data
+     1>main.cpp(432): warning C4244: 'argument' : conversion from 'int' to 'float', possible loss of data
+     1>main.cpp(454): warning C4267: 'initializing' : conversion from 'size_t' to 'int', possible loss of data
+     1>main.cpp(465): warning C4244: 'argument' : conversion from 'double' to 'int', possible loss of data
+     1>c:\users\vietanh\documents\visual studio 2012\projects\project1\project1\main.cpp(298): warning C4715: 'processLanes' : not all control paths return a value
        Link:
          C:\Program Files (x86)\VS\Microsoft Visual Studio 12.0\VC\bin\x86_amd64\link.exe /ERRORREPORT:PROMPT /OUT:"C:\Users\VietAnh\documents\visual studio 2012\Projects\Project1\x64\Debug\Project1.exe" /INCREMENTAL /NOLOGO /LIBPATH:C:\lib\new\opencv\build\x64\vc12\lib opencv_world310.lib opencv_world310d.lib kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib /MANIFEST /MANIFESTUAC:"level='asInvoker' uiAccess='false'" /manifest:embed /DEBUG /PDB:"C:\Users\VietAnh\documents\visual studio 2012\Projects\Project1\x64\Debug\Project1.pdb" /TLBID:1 /DYNAMICBASE /NXCOMPAT /IMPLIB:"C:\Users\VietAnh\documents\visual studio 2012\Projects\Project1\x64\Debug\Project1.lib" /MACHINE:X64 x64\Debug\main.obj
          x64\Debug\util.obj
@@ -34,4 +39,4 @@
 
 Build succeeded.
 
-Time Elapsed 00:00:02.44
+Time Elapsed 00:00:02.36

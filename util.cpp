@@ -114,10 +114,13 @@ void util::cropImage(IplImage* src,  IplImage* dest, CvRect rect){
 	cvSetImageROI(src, rect); 
     cvCopy(src, dest); 
     cvResetImageROI(src);
-	
 }
 
-
+void util::copyImage(IplImage* small_image, IplImage* big_image){
+	cv::Mat small = cv::cvarrToMat(small_image);
+	cv::Mat big = cv::cvarrToMat(big_image);
+	small.copyTo(big(cv::Rect(0, big_image -> height * 3/4,small.cols, small.rows)));
+}
 /********************************************************************************/
 /*	Author: Viet Anh															*/
 /*	Method polyfit																*/
@@ -125,3 +128,68 @@ void util::cropImage(IplImage* src,  IplImage* dest, CvRect rect){
 /*	parameter:	cv::Mat &src_x, cv::Mat &src_y, cv::Mat &dst, int order			*/
 /*	return: 																	*/
 /********************************************************************************/
+void util::writeFile(string data){
+	ofstream myfile;
+	myfile.open ("result.txt", fstream::app);
+	myfile << data;
+	myfile.close();
+  
+}
+
+void util::writeFile(string data, string file_path){
+	ofstream myfile;
+	myfile.open (file_path, fstream::app);
+	myfile << data;
+	myfile.close();
+}
+string util::readFile(string file_path){
+	std::ifstream t(file_path);
+	std::string str((std::istreambuf_iterator<char>(t)),
+					 std::istreambuf_iterator<char>());
+
+	return str;
+}
+void util::overwriteFile(string data, string file_path){
+	ofstream myfile;
+	myfile.open (file_path);
+	myfile << data;
+	myfile.close();
+}
+vector<string> splitMy(string str, char delimiter) {
+  vector<string> internal;
+  stringstream ss(str); // Turn the string into a stream.
+  string tok;
+  
+  while(getline(ss, tok, delimiter)) {
+    internal.push_back(tok);
+  }
+  
+  return internal;
+}
+vector<CvPoint> util::readOutputClipFPT(string url){
+	string line;
+	ifstream file (url);
+	vector<CvPoint> result;
+	CvPoint temp;
+	int size = 0;
+	if(file.is_open()){
+		while (getline(file, line))
+		{
+			if(size == 0){
+				size = atoi(line.c_str());
+			}else{
+				
+				vector<string> a = splitMy(line, ' ');
+				temp.x = atoi(a[1].c_str());
+				temp.y = atoi(a[2].c_str()) - 144 * 3;
+				result.push_back(temp);
+			}
+			
+		}
+		
+	}
+
+	return result;
+
+
+}
